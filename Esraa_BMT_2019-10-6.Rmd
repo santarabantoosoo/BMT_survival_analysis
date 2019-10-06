@@ -2462,10 +2462,9 @@ data$up_resection_ex_A <- data$upfrontresection
 
 data$up_resection_ex_A[data$group == "A"] <- NA
 
-explanatory = c("age_gp", "Gender", "Stage_mod", "bone_marrow", "CNS", "group_mod", "primary_site",  "up.front.IO", "Diag_time_2_weeks", "Diag_time_4_weeks", "tlc_gp", "hgb_gp", "plt_gp", "uric", "ldh_gp",  "tumor.lysis.syndrome", "up_resection_ex_A", "Response_cvp",  "tm_cvp_cop", "avg_between_cycles",  "treatmentrelatedsepticshock", "treatmentrelatedCVSaccident", "treatmentrelatedheartfailure", "when.considered.group.C", "treatmentrelatedsepticshock"
-)
+explanatory = c("Stage_mod", "bone_marrow", "CNS", "group_mod", "uric", "ldh_gp",  "tm_cvp_cop")
 
-explanatory_multi = c("Stage_mod", "CNS", "bone_marrow", "group_mod", "uric", "ldh_gp", "tm_cvp_cop", "treatmentrelatedsepticshock")
+# explanatory_multi = c("Stage_mod", "CNS", "bone_marrow", "group_mod", "uric", "ldh_gp", "tm_cvp_cop", "treatmentrelatedsepticshock")
 
 dependent = "Surv(os_fu, os_st)"
 
