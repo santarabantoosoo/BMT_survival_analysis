@@ -1,0 +1,2557 @@
+---
+title: "Esraa_BMT"
+output: word_document
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+---
+
+```{r setup, include=FALSE }
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, comment = NA)
+#this chunk is used to silence code, warnings, comments and hash from appearing in output
+```
+
+# Statistical analysis 
+
+
+Descriptive statsitics was presented as mean and standard deviation for continuous variables, frequency and percentage for categorical ones. Overall survival was defined as time from date of diagnosis till death of any cause or lost contact. Event free survival was defined as time from date of diagnosis till relapse, progression , death of any cause or lost contact. Kaplan meier and log rank test were used to compare survival across different levels of risk factors. Univariate cox regression models were fitted for risk factors and for those who were significant, a multivariate cox regression model was fitted. A p-value of 0.05 was used as the cut-off for statistically significant results. R Foundation for Statistical Computing,Vienna, Austria version 3.5.2 was used for the statistical analysis. R packages used in the analysis were "survminer" version 0.4.4 and "survival" version 2.44-1.1 for survival analysis and "finalfit" version 0.9.4  for descriptive and cox regression tables.   
+
+
+```{r}
+
+options(scipen = 999)
+library(flextable)
+library(finalfit) # for regression tables 
+library(factorMerger) # for merging factors together 
+library(table1)
+library(tidyverse)
+library(rio)
+library(funModeling)
+library(survival)
+library(survminer)
+library(lubridate)
+library(here)
+library(cmprsk)
+library(mstate) # for Cuminc
+library(cr17)
+library(broom)
+library(knitr)
+library(janitor)
+
+# gvhd should be added as a competing risk for relapse 
+# no it is not a problem because if A patient develops relapse, he will not develop gvhd not vice versa 
+data <- import("excel sheet (upfront resection).xlsx")
+
+#----------------- descriptive statistics ---------------------
+names(data)<-make.names(names(data),unique = TRUE)
+
+rmdtbl <- function(df){
+  
+tbl_alpha <- autofit(theme_vanilla(flextable(df)))
+
+tbl_alpha <- bg(tbl_alpha, bg = "blue", part = "header")
+tbl_alpha <- color(tbl_alpha, color = "white", part = "header")
+
+
+bes <- align(tbl_alpha, align = "center")
+
+bes <- align_text_col(bes, align = "center")
+return(bes)
+
+}
+library(survminer)
+
+
+km <- function(dfr, fu, st, gp){
+  
+fit <- do.call(survfit, list(formula = Surv(fu, st) ~ gp ,data = dfr))
+ 
+#return(surv_pvalue(fit))
+plot = ggsurvplot(
+  fit, data = dfr,
+  # data used to fit survival curves.
+  #surv_plot(OS_data, OS_data$OS_FU, OS_data$OS_status)
+  risk.table = TRUE,       # show risk table.
+  palette = "jco",
+  pval = ifelse(signif(surv_pvalue(fit)$pval, digits = 3) < 0.001, "< 0.001", signif(surv_pvalue(fit)$pval, digits = 3)),
+  #pval = signif(surv_pvalue(fit)$pval, digits = 3) ,             # show p-value of log-rank test.
+  conf.int = FALSE,         # show confidence intervals for
+  # point estimaes of survival curves.
+  xlim = c(0,80),        # present narrower X axis, but not affect
+  # survival estimates.
+  break.time.by = 12,     # break X axis in time intervals by 500.
+  #ggtheme = theme_minimal(), # customize plot and risk table with a theme.
+  risk.table.y.text.col = T,# colour risk table text annotations.
+  size = 2,
+  
+
+    risk.table.y.text = T # show bars instead of names in text annotations
+  # in legend of risk table
+)
+return(plot)
+}
+
+
+km_o <- function(dfr, fu, st){
+  
+fit <- do.call(survfit, list(formula = Surv(fu, st) ~ 1 ,data = dfr))
+ 
+#return(surv_pvalue(fit))
+plot = ggsurvplot(
+  fit, data = dfr,
+  # data used to fit survival curves.
+  #surv_plot(OS_data, OS_data$OS_FU, OS_data$OS_status)
+  risk.table = TRUE,       # show risk table.
+  palette = "jco",
+  #pval = signif(surv_pvalue(fit)$pval, digits = 3) ,             # show p-value of log-rank test.
+  conf.int = FALSE,         # show confidence intervals for
+  # point estimaes of survival curves.
+  xlim = c(0,80),        # present narrower X axis, but not affect
+  # survival estimates.
+  break.time.by = 12,     # break X axis in time intervals by 500.
+  size = 2,
+  #ggtheme = theme_minimal(), # customize plot and risk table with a theme.
+  risk.table.y.text.col = T, # colour risk table text annotations.
+  risk.table.y.text = T # show bars instead of names in text annotations
+  # in legend of risk table
+)
+return(plot)
+}
+
+
+
+surv <- function(dfr, fu, st, gp, t, title){
+  
+fite <- survfit(formula = Surv(fu, st) ~ gp ,data = dfr)
+
+OS_summary_chemo <-  summary(fite,times= t)
+
+OS_years5_chemo <-  OS_summary_chemo$surv
+
+OS_years5_chemo <- scales::percent(OS_years5_chemo)
+
+OS_years2_chemo <- data.frame(OS_years5_chemo)
+
+OS_sum<- surv_summary(fite, data= data)
+
+OS_sum_table <- attr(OS_sum, "table")
+
+OS_sum_table <- OS_sum_table[,c(1,4)]
+
+colnames(OS_sum_table) <- c("subjects", "events")
+
+
+table <- cbind(OS_years5_chemo, OS_sum_table)
+
+table <- cbind(row.names(table), table)
+
+colnames(table) <- c("Prognostic factor", title, "subjects", "events")
+return(table)
+}
+
+
+
+
+
+surv_o <- function(dfr, fu, st,  t, title){
+  
+fite <- survfit(formula = Surv(fu, st) ~ 1 ,data = dfr)
+
+OS_summary_chemo <-  summary(fite,times= t)
+
+OS_years5_chemo <-  OS_summary_chemo$surv
+
+OS_years5_chemo <- scales::percent(OS_years5_chemo)
+
+OS_years2_chemo <- data.frame(OS_years5_chemo)
+
+OS_sum<- surv_summary(fite, data= data)
+
+OS_sum_table <- attr(OS_sum, "table")
+
+OS_sum_table <- rownames_to_column(OS_sum_table)
+
+OS_sum_table <- OS_sum_table[c(1,4),]
+
+#colnames(OS_sum_table) <- c("subjects", "events")
+
+
+table <- rbind(OS_years5_chemo, OS_sum_table)
+
+#table <- cbind(row.names(table), table)
+
+names(table) <- c("Item", "Value")
+
+table$Item <- c(title, "subjects", "events")
+
+return(table)
+}
+
+```
+
+
+
+```{r}
+
+# Inspecting data 
+
+data <- data %>% 
+  mutate_at(vars(Uricacid, LDH ), na_if, c("Not done"))
+
+data <- data %>% 
+  mutate_at(vars(Uricacid, LDH ), na_if, c("Not received"))
+
+```
+
+# Patients' characteristics 
+  
+    
+```{r}
+
+data <- data %>% 
+  mutate_at(vars(Uricacid, LDH, timefromCVPendtillCOPADMstartdays, averagetimebetweencycles), as.numeric)
+
+data$age_gp <- cut(data$Age, c(0, 5, 200), labels = c("<=5", ">5"))
+
+data$ldh_gp <- cut(data$LDH, c(0, 499.9, 123123), labels = c("<500", ">=500"))
+
+data$uric <- cut(data$Uricacid, c(0, 6.999, 123123), labels = c("< 7", ">=7"))
+
+
+explanatory_desc = c("Age", "age_gp" , " Gender", "Stage",  "BM.involment" , "CNS", "group", "X1ry.site",   "ldh_gp", "uric",  "tumor.lysis.syndrome", "Timetodiagnosisweeks"  )
+
+summary_factorlist(data, explanatory = explanatory_desc, na_include = T, column = T, total_col = T) -> t
+
+names(t) <- c("Risk factor", "level", "Frequency (percentage)", "Total")
+
+rmdtbl(t)
+
+```
+
+# Deaths classification
+
+
+```{r}
+
+data$progression <- "no"
+
+data$progression[!is.na(data$date.of.progression)] <- "yes"
+
+data$post_cycle <- fct_lump_min(data$diedpostwhichcycle, 4)
+
+deaths <- data %>% 
+  filter(deadyesno == "YES")
+
+deaths$death_class <- "late death"
+
+deaths$death_class[deaths$Response == "early death" | deaths$diedpostwhichcycle == "1st M"] <- "early death"
+
+
+data <- data %>% 
+  mutate_at(vars(Gender, Stage, BM.involment, CNS, group, X1ry.site, others, up.front.IO, tumor.lysis.syndrome, upfrontresection, ResponsepostCVP,  Second.CVP, Response, Diseasestateatendoftreatment, deadyesno, diedpostwhichcycle, deathscause, relapseyesno, treatmentrelatedsepticshock, treatmentrelatedCVSaccident, treatmentrelatedheartfailure, residual,pet.ct, biopsy, upgrade, when.considered.group.C, progression ), as.factor)
+
+exp_death <- c("Age", "Gender", "Stage",  "BM.involment" , "CNS", "group", "X1ry.site",   "ldh_gp", "uric",  "tumor.lysis.syndrome", "Timetodiagnosisweeks",  
+  "treatmentrelatedsepticshock", "up.front.IO", "relapseyesno" , "progression", "tumor.lysis.syndrome", "post_cycle" ) 
+
+dep_death <- "death_class"
+
+summary_factorlist(deaths, explanatory = exp_death, dependent = dep_death, na_include = T, column = T, total_col = T) -> t
+
+names(t)[1:2] <- c("Risk factor", "levels")
+
+rmdtbl(t)
+
+
+```
+
+
+
+```{r}
+
+
+data <- data %>% 
+  filter(Response != "early death")
+
+data$date.of.diagnosis <- excel_numeric_to_date(as.numeric(data$date.of.diagnosis))
+
+
+data <- data %>% 
+  mutate_at(vars(date.of.diagnosis), ymd)
+
+data$biopsy[data$biopsy == "Yes/positive"] <- "yes/positive"
+
+#df_status(data)
+
+
+#detecting which patients have hosp. no that is not correct 
+
+# foo <- data.frame(table(data$Hosp.No))
+# 
+# filter(foo, Freq == 2)
+# data %>% 
+# filter(deadyesno == "NO" & !is.na(diedpostwhichcycle))
+
+```
+
+### Overall survival all patients 
+
+```{r fig.width= 10, fig.height= 6}
+
+data$os_st <- 0
+data$os_st[data$deadyesno == "YES"] <- 1
+
+data$os_fu <- (ymd(data$lastfollowup) - ymd(data$date.of.diagnosis))/ 30.4
+  
+km_o(data, data$os_fu, data$os_st)
+```
+
+### 3 years survival 
+
+```{r}
+
+os_3 <- data.frame(surv_o(data, data$os_fu, data$os_st, 36, "3-years OS"))
+
+rmdtbl(os_3)
+
+
+```
+
+### 5 years survival 
+
+```{r}
+os_5 <- data.frame(surv_o(data, data$os_fu, data$os_st, 60, "5-years OS"))
+
+rmdtbl(os_5)
+
+```
+
+
+
+
+### Overall survival by age 
+
+```{r fig.width= 10, fig.height= 6}
+
+
+km(data, data$os_fu, data$os_st, data$age_gp)
+
+
+
+```
+
+
+
+### 3 years survival 
+
+```{r}
+age_os_3 <- data.frame(surv(data, data$os_fu, data$os_st, data$age_gp, 36, "3-years OS"))
+
+rmdtbl(age_os_3)
+
+
+```
+
+### 5 years survival 
+
+```{r}
+age_os_5 <- data.frame(surv(data, data$os_fu, data$os_st, data$age_gp, 60, "5-years OS"))
+
+rmdtbl(age_os_5)
+
+```
+
+
+
+### Overall survival by gender
+
+```{r fig.height= 6, fig.width= 10}
+
+fite <- survfit(Surv(os_fu, os_st) ~ Gender ,data = data)
+ 
+ggsurvplot(
+  fite, data = data,
+  # data used to fit survival curves.
+  #surv_plot(OS_data, OS_data$OS_FU, OS_data$OS_status)
+  risk.table = T,       # show risk table.
+  palette = "jco",
+  pval = "0.590" ,             # show p-value of log-rank test.
+  conf.int = FALSE,         # show confidence intervals for
+  # point estimaes of survival curves.
+  xlim = c(0,80),        # present narrower X axis, but not affect
+  # survival estimates.
+  break.time.by = 12,     # break X axis in time intervals by 500.
+ # ggtheme = theme_minimal(), # customize plot and risk table with a theme.
+  risk.table.y.text.col = T, # colour risk table text annotations.
+  risk.table.y.text = FALSE, 
+#  surv.plot.height = 1.9, 
+ size = 2
+  # show bars instead of names in text annotations
+  # in legend of risk table
+)
+
+
+```
+
+### 3 years survival
+
+```{r}
+
+gender_os_3 <- surv(data, data$os_fu, data$os_st, data$Gender, 36, "3-years OS")
+
+rmdtbl(gender_os_3)
+
+```
+
+### 5 years survival
+
+```{r}
+
+gender_os_5 <- surv(data, data$os_fu, data$os_st, data$Gender, 60, "5-years OS")
+
+rmdtbl(gender_os_5)
+
+```
+
+
+### Overall survival by group
+
+can't include 7 patients ( group A ) in survival
+ 
+```{r fig.height= 6, fig.width= 10}
+
+dta <- data %>% 
+  filter(group != "A")
+
+km(dta, dta$os_fu, dta$os_st, dta$group)
+
+```
+
+### 3 years survival
+
+```{r}
+
+group_os_3 <- surv(dta, dta$os_fu, dta$os_st, dta$group, 36, "3-years OS")
+
+rmdtbl(group_os_3)
+
+```
+
+
+
+### 5 years survival
+
+```{r}
+
+group_os_5 <- surv(dta, dta$os_fu, dta$os_st, dta$group, 60, "5-years OS")
+
+rmdtbl(group_os_5)
+
+```
+
+
+### Overall survival by group (without excluding group A)
+
+
+```{r fig.height= 6, fig.width= 10}
+
+
+km(data, data$os_fu, data$os_st, data$group)
+
+```
+
+### 3 years survival
+
+```{r}
+
+group_os_3 <- surv(data, data$os_fu, data$os_st, data$group, 36, "3-years OS")
+
+rmdtbl(group_os_3)
+
+```
+
+### 5 years survival
+
+```{r}
+
+#group_os_5 <- surv(data, data$os_fu, data$os_st, data$group, 60, "5-years OS")
+
+# rmdtbl(group_os_5)
+
+```
+
+can't calculate 5 years survival 
+
+
+### Overall survival by stage
+
+
+
+```{r fig.height= 6, fig.width= 10}
+
+levels(data$Stage) <- c("Stage I/II", "Stage I/II", "Stage III", "Stage IV")
+
+km(data, data$os_fu, data$os_st, data$Stage)
+
+```
+
+### 3 years overall survival
+
+```{r}
+
+stage_os_3 <- surv(data, data$os_fu, data$os_st, data$Stage, 36, "3-years OS")
+
+rmdtbl(stage_os_3)
+
+```
+
+
+### 5 years overall survival
+
+```{r}
+
+stage_os_5 <- surv(data, data$os_fu, data$os_st, data$Stage, 60, "5-years OS")
+
+rmdtbl(stage_os_5)
+
+```
+
+
+
+
+### Overall survival by primary site 
+
+can't include others ( it has 3 patients)
+
+```{r fig.height= 6, fig.width= 10}
+
+levels(data$X1ry.site) <- c("abdominal", "non-abdominal", "non-abdominal")
+
+km(data, data$os_fu, data$os_st, data$X1ry.site)
+
+```
+
+### 3 years overall survival
+
+```{r}
+
+x1ry.site_os_3 <- surv(data, data$os_fu, data$os_st, data$X1ry.site, 36, "3-years OS")
+
+rmdtbl(x1ry.site_os_3)
+
+```
+
+
+### 5 years overall survival
+
+```{r}
+
+x1ry.site_os_5 <- surv(data, data$os_fu, data$os_st, data$X1ry.site, 60, "5-years OS")
+
+rmdtbl(x1ry.site_os_5)
+
+```
+
+
+
+
+### Overall survival by bone marrow 
+
+6 patients per group ... survival analysis not done 
+
+
+
+### Overall survival by combined BM 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$bone_marrow <- data$BM.involment
+
+levels(data$bone_marrow) <- c("<25%", ">25%", "<25%")
+
+km(data, data$os_fu, data$os_st, data$bone_marrow)
+
+```
+
+### 5 years overall survival
+
+```{r}
+
+bone_marrow_os_5 <- surv(data, data$os_fu, data$os_st, data$bone_marrow, 60, "5-years OS")
+
+rmdtbl(bone_marrow_os_5)
+
+```
+
+
+
+
+### Overall survival by CNS status
+
+only 10 patients within group .. It is highly recommended to remove this risk factor 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+
+km(data, data$os_fu, data$os_st, data$CNS)
+
+```
+
+### 3 years overall survival
+
+```{r}
+
+CNS_os_3 <- surv(data, data$os_fu, data$os_st, data$CNS, 36, "3-years OS")
+
+rmdtbl(CNS_os_3)
+
+```
+
+### 5 years overall survival
+
+```{r}
+
+CNS_os_5 <- surv(data, data$os_fu, data$os_st, data$CNS, 60, "5-years OS")
+
+rmdtbl(CNS_os_5)
+
+```
+
+
+
+### Overall survival by Combined CNS + BM > 25%
+
+very few patients (3 patients)
+
+```{r}
+#table(data$CNS, data$bone_marrow)
+```
+
+
+
+
+
+### Overall survival by time to diagnosis (2 weeks cut-off)
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$Diag_time_2_weeks <- cut(data$Timetodiagnosisweeks, c(0, 2, 10000000), labels = c("<= 2", ">2"))
+
+km(data, data$os_fu, data$os_st, data$Diag_time_2_weeks)
+
+```
+
+### 3 years overall survival
+
+```{r}
+
+Diag_time_2_weeks_os_3 <- surv(data, data$os_fu, data$os_st, data$Diag_time_2_weeks, 36, "3-years OS")
+
+rmdtbl(Diag_time_2_weeks_os_3)
+
+```
+
+
+
+### 5 years overall survival
+
+```{r}
+
+Diag_time_2_weeks_os_5 <- surv(data, data$os_fu, data$os_st, data$Diag_time_2_weeks, 60, "5-years OS")
+
+rmdtbl(Diag_time_2_weeks_os_5)
+
+```
+
+
+
+
+### Overall survival by time to diagnosis (4 weeks cut-off)
+
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$Diag_time_4_weeks <- cut(data$Timetodiagnosisweeks, c(0, 4, 10000000), labels = c("<= 4", ">4"))
+
+km(data, data$os_fu, data$os_st, data$Diag_time_4_weeks)
+
+```
+
+### 3 years overall survival
+
+```{r}
+
+Diag_time_4_weeks_os_3 <- surv(data, data$os_fu, data$os_st, data$Diag_time_4_weeks, 36, "3-years OS")
+
+rmdtbl(Diag_time_4_weeks_os_3)
+
+```
+
+
+
+### 5 years overall survival
+
+```{r}
+
+Diag_time_4_weeks_os_5 <- surv(data, data$os_fu, data$os_st, data$Diag_time_4_weeks, 60, "5-years OS")
+
+rmdtbl(Diag_time_4_weeks_os_5)
+
+```
+
+
+### Overall survival by TLC 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$tlc_gp <- cut(data$TLC, c(0, 10, 123123), labels = c("<= 10,000", ">10,000"))
+
+km(data, data$os_fu, data$os_st, data$tlc_gp)
+
+```
+
+### 3 years overall survival
+
+```{r}
+
+tlc_gp_os_3 <- surv(data, data$os_fu, data$os_st, data$tlc_gp, 36, "3-years OS")
+
+rmdtbl(tlc_gp_os_3)
+
+```
+
+
+### 5 years overall survival
+
+```{r}
+
+tlc_gp_os_5 <- surv(data, data$os_fu, data$os_st, data$tlc_gp, 60, "5-years OS")
+
+rmdtbl(tlc_gp_os_5)
+
+```
+
+
+
+
+### Overall survival by HGB
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$hgb_gp <- cut(data$HGB, c(0, 8, 123123), labels = c("<= 8", ">8"))
+
+km(data, data$os_fu, data$os_st, data$hgb_gp)
+
+```
+
+### 3 years overall survival
+
+```{r}
+
+hgb_gp_os_3 <- surv(data, data$os_fu, data$os_st, data$hgb_gp, 36, "3-years OS")
+
+rmdtbl(hgb_gp_os_3)
+
+```
+
+### 5 years overall survival
+
+```{r}
+
+hgb_gp_os_5 <- surv(data, data$os_fu, data$os_st, data$hgb_gp, 60, "5-years OS")
+
+rmdtbl(hgb_gp_os_5)
+
+```
+
+
+
+### Overall survival by PLT 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$plt_gp <- cut(data$PLT, c(0, 500, 123123), labels = c("<= 500", ">500"))
+
+km(data, data$os_fu, data$os_st, data$plt_gp)
+
+```
+
+### 3 years overall survival
+
+```{r}
+
+plt_gp_os_3 <- surv(data, data$os_fu, data$os_st, data$plt_gp, 36, "3-years OS")
+
+rmdtbl(plt_gp_os_3)
+
+```
+
+
+### 5 years overall survival
+
+```{r}
+
+plt_gp_os_5 <- surv(data, data$os_fu, data$os_st, data$plt_gp, 60, "5-years OS")
+
+rmdtbl(plt_gp_os_5)
+
+```
+
+
+
+### Overall survival by TLC 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+
+km(data, data$os_fu, data$os_st, data$uric)
+
+```
+
+### 3 years overall survival
+
+```{r}
+
+uric_os_3 <- surv(data, data$os_fu, data$os_st, data$uric, 36, "3-years OS")
+
+rmdtbl(uric_os_3)
+
+```
+
+
+### 5 years overall survival
+
+```{r}
+
+uric_os_5 <- surv(data, data$os_fu, data$os_st, data$uric, 60, "5-years OS")
+
+rmdtbl(uric_os_5)
+
+```
+
+
+
+
+
+
+### Overall survival by LDH 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+
+km(data, data$os_fu, data$os_st, data$ldh_gp)
+
+```
+
+### 3 years overall survival
+
+```{r}
+
+ldh_gp_os_3 <- surv(data, data$os_fu, data$os_st, data$ldh_gp, 36, "3-years OS")
+
+rmdtbl(ldh_gp_os_3)
+
+```
+
+
+### 5 years overall survival
+
+```{r}
+
+ldh_gp_os_5 <- surv(data, data$os_fu, data$os_st, data$ldh_gp, 60, "5-years OS")
+
+rmdtbl(ldh_gp_os_5)
+
+```
+
+
+
+
+### Overall survival by upfront intestinal obstruction 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+
+km(data, data$os_fu, data$os_st, data$up.front.IO)
+
+```
+
+is there a confounding variable here ?
+
+### 3 years overall survival
+
+```{r}
+
+up_io_gp_os_3 <- surv(data, data$os_fu, data$os_st, data$up.front.IO, 36, "3-years OS")
+
+rmdtbl(up_io_gp_os_3)
+
+```
+
+
+
+### 5 years overall survival
+
+```{r}
+
+up_io_gp_os_5 <- surv(data, data$os_fu, data$os_st, data$up.front.IO, 60, "5-years OS")
+
+rmdtbl(up_io_gp_os_5)
+
+```
+
+
+
+
+
+
+
+### Overall survival by upfront TLS 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+
+km(data, data$os_fu, data$os_st, data$tumor.lysis.syndrome)
+
+```
+
+### 3 years overall survival
+
+```{r}
+
+tls_os_3 <- surv(data, data$os_fu, data$os_st, data$tumor.lysis.syndrome, 36, "3-years OS")
+
+rmdtbl(tls_os_3)
+
+```
+
+
+### 5 years overall survival
+
+```{r}
+
+tls_os_5 <- surv(data, data$os_fu, data$os_st, data$tumor.lysis.syndrome, 60, "5-years OS")
+
+rmdtbl(tls_os_5)
+
+```
+
+
+
+
+
+### Overall survival by time from CVP end 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$tm_cvp_cop <- cut(data$timefromCVPendtillCOPADMstartdays, c(0, 3, 100000), labels = c("<= 3", ">3"))
+
+km(data, data$os_fu, data$os_st, data$tm_cvp_cop)
+
+```
+
+### 3 years overall survival
+
+```{r}
+
+tm_cvp_cop_os_3 <- surv(data, data$os_fu, data$os_st, data$tm_cvp_cop, 36, "3-years OS")
+
+rmdtbl(tm_cvp_cop_os_3)
+
+```
+
+
+### 5 years overall survival
+
+```{r}
+
+tm_cvp_cop_os_5 <- surv(data, data$os_fu, data$os_st, data$tm_cvp_cop, 60, "5-years OS")
+
+rmdtbl(tm_cvp_cop_os_5)
+
+```
+
+
+
+
+
+
+### Overall survival by average time between cycles 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+
+data$avg_between_cycles <- cut(data$averagetimebetweencycles, c(0, 26, 123123), labels = c("<= 26 days", ">26 days"))
+
+km(data, data$os_fu, data$os_st, data$avg_between_cycles)
+
+```
+
+### 3 years overall survival
+
+```{r}
+
+avg_between_cycles_os_3 <- surv(data, data$os_fu, data$os_st, data$avg_between_cycles, 36, "3-years OS")
+
+rmdtbl(avg_between_cycles_os_3)
+
+```
+
+
+### 5 years overall survival
+
+
+```{r}
+
+avg_between_cycles_os_5 <- surv(data, data$os_fu, data$os_st, data$avg_between_cycles, 60, "5-years OS")
+
+rmdtbl(avg_between_cycles_os_5)
+
+```
+
+
+
+
+### Overall survival by second CVP 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+
+km(data, data$os_fu, data$os_st, data$Second.CVP)
+
+```
+
+It is advised not to report survival here as we have 10 patients. Also this should be reported as time dependent cox  
+
+### 3 years overall survival
+
+```{r}
+
+Second.CVP_os_3 <- surv(data, data$os_fu, data$os_st, data$Second.CVP, 36, "3-years OS")
+
+rmdtbl(Second.CVP_os_3)
+
+
+```
+
+
+### 5 years overall survival
+
+```{r}
+
+Second.CVP_os_5 <- surv(data, data$os_fu, data$os_st, data$Second.CVP, 60, "5-years OS")
+
+rmdtbl(Second.CVP_os_5)
+
+
+```
+
+
+
+
+### Overall survival by response post CVP  
+
+
+
+```{r fig.height= 6, fig.width= 10}
+
+dta <- data %>% 
+  filter(ResponsepostCVP %in% c("IR", "NR"))
+
+km(dta, dta$os_fu, dta$os_st, dta$ResponsepostCVP)
+
+```
+
+time dependent instead of KM is better here. 
+
+### 3 years overall survival
+
+```{r}
+
+cvp_resp_os_3 <- surv(dta, dta$os_fu, dta$os_st, dta$ResponsepostCVP, 36, "3-years OS")
+
+rmdtbl(cvp_resp_os_3)
+
+
+```
+
+
+### 5 years overall survival
+
+```{r}
+
+cvp_resp_os_5 <- surv(dta, dta$os_fu, dta$os_st, dta$ResponsepostCVP, 60, "5-years OS")
+
+rmdtbl(cvp_resp_os_5)
+
+
+```
+
+
+
+
+### Overall survival by response  
+
+nothing to compare with ... 6 persistent, 4 progressed..  and I can't compare with dead due to bias.. 
+
+
+### Overall survival by response end of treatment 
+
+I can't compare with dead due to bias.. 
+
+
+
+
+### Overall survival by upfront surgical resection 
+
+
+This should be made with time dependent cox 
+
+```{r fig.height= 6, fig.width= 10}
+
+levels(data$upfrontresection) <- c("no", "yes", "yes")
+
+km(data, data$os_fu, data$os_st, data$upfrontresection)
+
+```
+
+time dependent instead of KM is better here. 
+
+### 3 years overall survival
+
+```{r}
+
+up_res_os_3 <- surv(data, data$os_fu, data$os_st, data$upfrontresection, 36, "3-years OS")
+
+rmdtbl(up_res_os_3)
+
+
+```
+
+
+### 5 years overall survival
+
+```{r}
+
+up_res_os_5 <- surv(data, data$os_fu, data$os_st, data$upfrontresection, 60, "5-years OS")
+
+rmdtbl(up_res_os_5)
+
+
+```
+
+
+### Overall survival by upfront surgical resection ( after excluding group A )
+
+
+This should be made with time dependent cox 
+
+```{r fig.height= 6, fig.width= 10}
+
+dta <- data %>% 
+  filter(group != "A")
+
+km(dta, dta$os_fu, dta$os_st, dta$upfrontresection)
+
+```
+
+time dependent instead of KM is better here. 
+
+### 3 years overall survival
+
+```{r}
+
+up_res_os_3 <- surv(dta, dta$os_fu, dta$os_st, dta$upfrontresection, 36, "3-years OS")
+
+rmdtbl(up_res_os_3)
+
+
+```
+
+
+### 5 years overall survival
+
+```{r}
+
+up_res_os_5 <- surv(dta, dta$os_fu, dta$os_st, dta$upfrontresection, 60, "5-years OS")
+
+rmdtbl(up_res_os_5)
+
+
+```
+
+
+
+### Overall survival by treatment related septic shock   
+
+should be time dependent cox
+
+```{r fig.height= 6, fig.width= 10}
+
+km(data, data$os_fu, data$os_st, data$treatmentrelatedsepticshock)
+
+```
+
+### 3 years overall survival
+
+```{r}
+
+shock_os_3 <- surv(data, data$os_fu, data$os_st, data$treatmentrelatedsepticshock, 36, "3-years OS")
+
+rmdtbl(shock_os_3)
+
+
+```
+
+### 5 years overall survival
+
+```{r}
+
+shock_os_5 <- surv(data, data$os_fu, data$os_st, data$treatmentrelatedsepticshock, 60, "5-years OS")
+
+rmdtbl(shock_os_5)
+
+
+```
+
+
+
+
+### Overall survival by PRES  
+
+
+
+```{r fig.height= 6, fig.width= 10}
+
+km(data, data$os_fu, data$os_st, data$treatmentrelatedCVSaccident)
+
+```
+
+only 10 patients, it is advised not to be used in survival.. 
+Also, time dependent cox is needed 
+
+
+
+### 3 years overall survival
+
+```{r}
+
+cvs_os_3 <- surv(data, data$os_fu, data$os_st, data$treatmentrelatedCVSaccident, 36, "3-years OS")
+
+rmdtbl(cvs_os_3)
+
+
+```
+
+
+### 5 years overall survival
+
+```{r}
+
+cvs_os_5 <- surv(data, data$os_fu, data$os_st, data$treatmentrelatedCVSaccident, 60, "5-years OS")
+
+rmdtbl(cvs_os_5)
+
+
+```
+
+
+### Overall survival by PET/CT  
+
+comparing negative PET with patients with residuals who didn't have negative PET
+
+```{r fig.height= 6, fig.width= 10}
+
+data$pet_negative <- NA
+
+data$pet_negative[data$residual == "yes"] <- "no"
+
+data$pet_negative[data$pet.ct == "negative"] <- "yes"
+
+km(data, data$os_fu, data$os_st, data$pet_negative)
+
+```
+
+
+### 3 years overall survival
+
+```{r}
+
+pet_os_3 <- surv(data, data$os_fu, data$os_st, data$pet_negative, 36, "3-years OS")
+
+rmdtbl(pet_os_3)
+
+
+```
+
+
+### 5 years overall survival
+
+```{r}
+
+pet_os_5 <- surv(data, data$os_fu, data$os_st, data$pet_negative, 60, "5-years OS")
+
+rmdtbl(pet_os_5)
+
+
+```
+
+
+
+
+### Overall survival by group C transition
+
+very few patients in residual
+
+```{r fig.height= 6, fig.width= 10}
+
+dta <- data %>% 
+  filter(!when.considered.group.C == "residual post CYMI")
+
+km(dta, dta$os_fu, dta$os_st, dta$when.considered.group.C)
+
+```
+
+time dependent instead of KM is better here. 
+
+### 3 years overall survival
+
+```{r}
+
+gp_c_os_3 <- surv(dta, dta$os_fu, dta$os_st, dta$when.considered.group.C, 36, "3-years OS")
+
+rmdtbl(gp_c_os_3)
+
+
+```
+
+
+### 5 years overall survival
+
+```{r}
+
+gp_c_os_5 <- surv(dta, dta$os_fu, dta$os_st, dta$when.considered.group.C, 60, "5-years OS")
+
+rmdtbl(gp_c_os_5)
+
+
+```
+
+
+### Overall survival by HF
+
+only 4 patients have HF
+
+
+
+
+
+
+
+
+
+
+
+# EFS 
+
+
+
+```{r}
+
+data$efs_st <- 0
+
+data$efs_st[data$deadyesno == "YES" | data$relapseyesno == "YES" | !is.na(data$date.of.progression)] <- 1
+
+data$efs_fu <- data$lastfollowup
+
+data$efs_fu[!is.na(data$date.of.progression)] <- data$date.of.progression[!is.na(data$date.of.progression)]
+
+data$efs_fu[!is.na(data$timeofrelapse)] <- data$timeofrelapse[!is.na(data$timeofrelapse)]
+
+data$efs_fu <- (ymd(data$efs_fu) - ymd(data$date.of.diagnosis))/30.4
+
+```
+
+
+
+### Event free survival all patients 
+
+```{r fig.width= 10, fig.height= 6}
+
+
+km_o(data, data$efs_fu, data$efs_st)
+
+```
+
+### 3 years event free survival 
+
+```{r}
+
+efs_3 <- data.frame(surv_o(data, data$efs_fu, data$efs_st, 36, "3-years efs"))
+
+rmdtbl(efs_3)
+
+
+```
+
+### 5 years event free survival 
+
+```{r}
+efs_5 <- data.frame(surv_o(data, data$efs_fu, data$efs_st, 60, "5-years efs"))
+
+rmdtbl(efs_5)
+
+```
+
+
+
+### event free survival by age
+
+```{r fig.width= 10, fig.height= 6}
+km(data, data$efs_fu, data$efs_st, data$age_gp)
+
+```
+
+### 3 years event free survival
+
+
+```{r}
+age_efs_3 <- data.frame(surv(data, data$efs_fu, data$efs_st, data$age_gp, 36, "3-years EFS"))
+
+rmdtbl(age_efs_3)
+
+```
+
+### 5 years event free survival
+
+
+```{r}
+age_efs_5 <- data.frame(surv(data, data$efs_fu, data$efs_st, data$age_gp, 60, "5-years efs"))
+
+rmdtbl(age_efs_5)
+
+```
+
+
+
+### event free survival by gender
+
+```{r fig.height= 6, fig.width= 10}
+
+km(data, data$efs_fu, data$efs_st, data$Gender)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+gender_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$Gender, 36, "3-years efs")
+
+rmdtbl(gender_efs_3)
+
+```
+
+### 5 years event free survival
+
+```{r}
+
+gender_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$Gender, 60, "5-years efs")
+
+rmdtbl(gender_efs_5)
+
+```
+
+
+### event free survival by group
+
+can't include 7 patients ( group A ) in survival
+ 
+```{r fig.height= 6, fig.width= 10}
+
+dta <- data %>% 
+  filter(group != "A")
+
+km(dta, dta$efs_fu, dta$efs_st, dta$group)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+group_efs_3 <- surv(dta, dta$efs_fu, dta$efs_st, dta$group, 36, "3-years efs")
+
+rmdtbl(group_efs_3)
+
+```
+
+
+
+### 5 years event free survival
+
+```{r}
+
+group_efs_5 <- surv(dta, dta$efs_fu, dta$efs_st, dta$group, 60, "5-years efs")
+
+rmdtbl(group_efs_5)
+
+```
+
+
+
+
+### event free survival by group (without excluding group A)
+
+
+```{r fig.height= 6, fig.width= 10}
+
+km(data, data$efs_fu, data$efs_st, data$group)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+group_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$group, 36, "3-years efs")
+
+rmdtbl(group_efs_3)
+
+```
+
+### 5 years event free survival
+
+```{r}
+
+# group_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$group, 60, "5-years efs")
+# 
+# rmdtbl(group_efs_5)
+
+```
+
+can't calculate 5 years survival 
+
+### event free survival by stage
+
+```{r fig.height= 6, fig.width= 10}
+
+km(data, data$efs_fu, data$efs_st, data$Stage)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+stage_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$Stage, 36, "3-years efs")
+
+rmdtbl(stage_efs_3)
+
+```
+
+
+### 5 years event free survival
+
+```{r}
+
+stage_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$Stage, 60, "5-years efs")
+
+rmdtbl(stage_efs_5)
+
+```
+
+
+
+
+### event free survival by primary site 
+
+can't include others ( it has 3 patients)
+
+```{r fig.height= 6, fig.width= 10}
+
+km(data, data$efs_fu, data$efs_st, data$X1ry.site)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+x1ry.site_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$X1ry.site, 36, "3-years efs")
+
+rmdtbl(x1ry.site_efs_3)
+
+```
+
+
+### 5 years event free survival
+
+```{r}
+
+x1ry.site_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$X1ry.site, 60, "5-years efs")
+
+rmdtbl(x1ry.site_efs_5)
+
+```
+
+
+
+
+### event free survival by bone marrow 
+
+6 patients per group ... survival analysis not done 
+
+
+
+### event free survival by combined BM 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$bone_marrow <- data$BM.involment
+
+levels(data$bone_marrow) <- c("<25%", ">25%", "<25%")
+
+km(data, data$efs_fu, data$efs_st, data$bone_marrow)
+
+```
+
+
+### 3 years event free survival
+
+```{r}
+
+bone_marrow_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$bone_marrow, 36, "3-years efs")
+
+rmdtbl(bone_marrow_efs_3)
+
+```
+
+
+
+### 5 years event free survival
+
+```{r}
+
+bone_marrow_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$bone_marrow, 60, "5-years efs")
+
+rmdtbl(bone_marrow_efs_5)
+
+```
+
+
+
+
+### event free survival by CNS status
+
+only 10 patients within group .. It is highly recommended to remove this risk factor 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+
+km(data, data$efs_fu, data$efs_st, data$CNS)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+CNS_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$CNS, 36, "3-years efs")
+
+rmdtbl(CNS_efs_3)
+
+```
+
+### 5 years event free survival
+
+```{r}
+
+CNS_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$CNS, 60, "5-years efs")
+
+rmdtbl(CNS_efs_5)
+
+```
+
+
+
+### Combined CNS + BM > 25%
+
+very few patients (3 patients)
+
+
+
+
+
+
+### event free survival by time to diagnefsis (2 weeks cut-off)
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$Diag_time_2_weeks <- cut(data$Timetodiagnosisweeks, c(0, 2, 10000000), labels = c("<= 2", ">2"))
+
+
+km(data, data$efs_fu, data$efs_st, data$Diag_time_2_weeks)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+Diag_time_2_weeks_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$Diag_time_2_weeks, 36, "3-years efs")
+
+rmdtbl(Diag_time_2_weeks_efs_3)
+
+```
+
+
+
+### 5 years event free survival
+
+```{r}
+
+Diag_time_2_weeks_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$Diag_time_2_weeks, 60, "5-years efs")
+
+rmdtbl(Diag_time_2_weeks_efs_5)
+
+```
+
+
+
+
+### event free survival by time to diagnefsis (4 weeks cut-off)
+
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$Diag_time_4_weeks <- cut(data$Timetodiagnosisweeks, c(0, 4, 10000000), labels = c("<= 4", ">4"))
+
+km(data, data$efs_fu, data$efs_st, data$Diag_time_4_weeks)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+Diag_time_4_weeks_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$Diag_time_4_weeks, 36, "3-years efs")
+
+rmdtbl(Diag_time_4_weeks_efs_3)
+
+```
+
+
+
+### 5 years event free survival
+
+```{r}
+
+Diag_time_4_weeks_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$Diag_time_4_weeks, 60, "5-years efs")
+
+rmdtbl(Diag_time_4_weeks_efs_5)
+
+```
+
+
+### event free survival by TLC 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$tlc_gp <- cut(data$TLC, c(0, 10, 123123), labels = c("<= 10,000", ">10,000"))
+
+km(data, data$efs_fu, data$efs_st, data$tlc_gp)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+tlc_gp_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$tlc_gp, 36, "3-years efs")
+
+rmdtbl(tlc_gp_efs_3)
+
+```
+
+
+### 5 years event free survival
+
+```{r}
+
+tlc_gp_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$tlc_gp, 60, "5-years efs")
+
+rmdtbl(tlc_gp_efs_5)
+
+```
+
+
+
+
+### event free survival by HGB
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$hgb_gp <- cut(data$HGB, c(0, 8, 123123), labels = c("<= 8", ">8"))
+
+km(data, data$efs_fu, data$efs_st, data$hgb_gp)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+hgb_gp_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$hgb_gp, 36, "3-years efs")
+
+rmdtbl(hgb_gp_efs_3)
+
+```
+
+### 5 years event free survival
+
+```{r}
+
+hgb_gp_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$hgb_gp, 60, "5-years efs")
+
+rmdtbl(hgb_gp_efs_5)
+
+```
+
+
+
+### event free survival by PLT 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$plt_gp <- cut(data$PLT, c(0, 500, 123123), labels = c("<= 500", ">500"))
+
+km(data, data$efs_fu, data$efs_st, data$plt_gp)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+plt_gp_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$plt_gp, 36, "3-years efs")
+
+rmdtbl(plt_gp_efs_3)
+
+```
+
+
+### 5 years event free survival
+
+```{r}
+
+plt_gp_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$plt_gp, 60, "5-years efs")
+
+rmdtbl(plt_gp_efs_5)
+
+```
+
+
+
+### event free survival by TLC 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$uric <- cut(data$Uricacid, c(0, 7, 123123), labels = c("<= 7", ">7"))
+
+km(data, data$efs_fu, data$efs_st, data$uric)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+uric_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$uric, 36, "3-years efs")
+
+rmdtbl(uric_efs_3)
+
+```
+
+
+### 5 years event free survival
+
+```{r}
+
+uric_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$uric, 60, "5-years efs")
+
+rmdtbl(uric_efs_5)
+
+```
+
+
+
+
+
+
+### event free survival by LDH 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$ldh_gp <- cut(data$LDH, c(0, 500, 123123), labels = c("<= 500", ">500"))
+
+km(data, data$efs_fu, data$efs_st, data$ldh_gp)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+ldh_gp_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$ldh_gp, 36, "3-years efs")
+
+rmdtbl(ldh_gp_efs_3)
+
+```
+
+
+### 5 years event free survival
+
+```{r}
+
+ldh_gp_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$ldh_gp, 60, "5-years efs")
+
+rmdtbl(ldh_gp_efs_5)
+
+```
+
+
+
+
+### event free survival by upfront intestinal obstruction 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+
+km(data, data$efs_fu, data$efs_st, data$up.front.IO)
+
+```
+
+is there a confounding variable here ?
+
+### 3 years event free survival
+
+```{r}
+
+up_io_gp_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$up.front.IO, 36, "3-years efs")
+
+rmdtbl(up_io_gp_efs_3)
+
+```
+
+
+
+### 5 years event free survival
+
+```{r}
+
+up_io_gp_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$up.front.IO, 60, "5-years efs")
+
+rmdtbl(up_io_gp_efs_5)
+
+```
+
+
+
+
+
+
+
+### event free survival by upfront TLS 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+
+km(data, data$efs_fu, data$efs_st, data$tumor.lysis.syndrome)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+tls_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$tumor.lysis.syndrome, 36, "3-years efs")
+
+rmdtbl(tls_efs_3)
+
+```
+
+
+### 5 years event free survival
+
+```{r}
+
+tls_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$tumor.lysis.syndrome, 60, "5-years efs")
+
+rmdtbl(tls_efs_5)
+
+```
+
+
+
+
+
+### event free survival by time from CVP end 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+data$tm_cvp_cop <- cut(data$timefromCVPendtillCOPADMstartdays, c(0, 3, 100000), labels = c("<= 3", ">3"))
+
+km(data, data$efs_fu, data$efs_st, data$tm_cvp_cop)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+tm_cvp_cop_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$tm_cvp_cop, 36, "3-years efs")
+
+rmdtbl(tm_cvp_cop_efs_3)
+
+```
+
+
+### 5 years event free survival
+
+```{r}
+
+tm_cvp_cop_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$tm_cvp_cop, 60, "5-years efs")
+
+rmdtbl(tm_cvp_cop_efs_5)
+
+```
+
+
+
+
+
+
+### event free survival by average time between cycles 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+
+km(data, data$efs_fu, data$efs_st, data$avg_between_cycles)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+avg_between_cycles_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$avg_between_cycles, 36, "3-years efs")
+
+rmdtbl(avg_between_cycles_efs_3)
+
+```
+
+
+### 5 years event free survival
+
+```{r}
+
+avg_between_cycles_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$avg_between_cycles, 60, "5-years efs")
+
+rmdtbl(avg_between_cycles_efs_5)
+
+```
+
+
+
+
+
+
+### event free survival by second CVP 
+
+
+```{r fig.height= 6, fig.width= 10}
+
+
+km(data, data$efs_fu, data$efs_st, data$Second.CVP)
+
+```
+
+It is advised not to report survival here as we have 10 patients. Also this should be reported as time dependent cox  
+
+### 3 years event free survival
+
+```{r}
+
+Second.CVP_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$Second.CVP, 36, "3-years efs")
+
+rmdtbl(Second.CVP_efs_3)
+
+
+```
+
+
+### 5 years event free survival
+
+```{r}
+
+Second.CVP_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$Second.CVP, 60, "5-years efs")
+
+rmdtbl(Second.CVP_efs_5)
+
+
+```
+
+
+
+
+### event free survival by response post CVP  
+
+
+
+```{r fig.height= 6, fig.width= 10}
+
+dta <- data %>% 
+  filter(ResponsepostCVP %in% c("IR", "NR"))
+
+km(dta, dta$efs_fu, dta$efs_st, dta$ResponsepostCVP)
+
+```
+
+time dependent instead of KM is better here. 
+
+### 3 years event free survival
+
+```{r}
+
+cvp_resp_efs_3 <- surv(dta, dta$efs_fu, dta$efs_st, dta$ResponsepostCVP, 36, "3-years efs")
+
+rmdtbl(cvp_resp_efs_3)
+
+
+```
+
+
+### 5 years event free survival
+
+```{r}
+
+cvp_resp_efs_5 <- surv(dta, dta$efs_fu, dta$efs_st, dta$ResponsepostCVP, 60, "5-years efs")
+
+rmdtbl(cvp_resp_efs_5)
+
+
+```
+
+
+
+
+### event free survival by response  
+
+nothing to compare with ... 6 persistent, 4 progressed..  and I can't compare with dead due to bias.. 
+
+
+### event free survival by response end of treatment 
+
+I can't compare with dead due to bias.. 
+
+
+
+### event free survival by upfront surgical resection 
+
+
+This should be made with time dependent cox 
+
+```{r fig.height= 6, fig.width= 10}
+
+km(data, data$efs_fu, data$efs_st, data$upfrontresection)
+
+```
+
+time dependent instead of KM is better here. 
+
+### 3 years event free survival
+
+```{r}
+
+up_res_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$upfrontresection, 36, "3-years efs")
+
+rmdtbl(up_res_efs_3)
+
+
+```
+
+
+
+### 5 years event free survival
+
+```{r}
+
+up_res_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$upfrontresection, 60, "5-years efs")
+
+rmdtbl(up_res_efs_5)
+
+
+```
+
+
+### event free survival by upfront surgical resection  (excluding group A )
+
+
+This should be made with time dependent cox 
+
+```{r fig.height= 6, fig.width= 10}
+dta <- data %>% 
+  filter(group != "A")
+
+km(dta, dta$efs_fu, dta$efs_st, dta$upfrontresection)
+
+```
+
+time dependent instead of KM is better here. 
+
+### 3 years event free survival
+
+```{r}
+
+up_res_efs_3 <- surv(dta, dta$efs_fu, dta$efs_st, dta$upfrontresection, 36, "3-years efs")
+
+rmdtbl(up_res_efs_3)
+
+
+```
+
+
+
+### 5 years event free survival
+
+```{r}
+
+up_res_efs_5 <- surv(dta, dta$efs_fu, dta$efs_st, dta$upfrontresection, 60, "5-years efs")
+
+rmdtbl(up_res_efs_5)
+
+
+```
+
+
+### event free survival by treatment related septic shock   
+
+should be time dependent cox
+
+```{r fig.height= 6, fig.width= 10}
+
+km(data, data$efs_fu, data$efs_st, data$treatmentrelatedsepticshock)
+
+```
+
+### 3 years event free survival
+
+```{r}
+
+shock_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$treatmentrelatedsepticshock, 36, "3-years efs")
+
+rmdtbl(shock_efs_3)
+
+
+```
+
+### 5 years event free survival
+
+```{r}
+
+shock_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$treatmentrelatedsepticshock, 60, "5-years efs")
+
+rmdtbl(shock_efs_5)
+
+
+```
+
+
+
+
+### event free survival by PRES  
+
+
+
+```{r fig.height= 6, fig.width= 10}
+
+km(data, data$efs_fu, data$efs_st, data$treatmentrelatedCVSaccident)
+
+```
+
+only 10 patients, it is advised not to be used in survival.. 
+Also, time dependent cox is needed 
+
+
+
+### 3 years event free survival
+
+```{r}
+
+cvs_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$treatmentrelatedCVSaccident, 36, "3-years efs")
+
+rmdtbl(cvs_efs_3)
+
+
+```
+
+
+### 5 years event free survival
+
+```{r}
+
+cvs_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$treatmentrelatedCVSaccident, 60, "5-years efs")
+
+rmdtbl(cvs_efs_5)
+
+
+```
+
+
+
+### event free survival by PET/CT  
+
+
+
+```{r fig.height= 6, fig.width= 10}
+
+km(data, data$efs_fu, data$efs_st, data$pet_negative)
+
+```
+
+
+
+### 3 years event free survival
+
+```{r}
+
+pet_efs_3 <- surv(data, data$efs_fu, data$efs_st, data$pet_negative, 36, "3-years efs")
+
+rmdtbl(pet_efs_3)
+
+
+```
+
+
+### 5 years event free survival
+
+```{r}
+
+pet_efs_5 <- surv(data, data$efs_fu, data$efs_st, data$pet_negative, 60, "5-years efs")
+
+rmdtbl(pet_efs_5)
+
+
+```
+
+
+
+### event free survival by group C transition
+
+
+
+```{r fig.height= 6, fig.width= 10}
+
+dta <- data %>% 
+  filter(!when.considered.group.C == "residual post CYMI")
+
+km(dta, dta$efs_fu, dta$efs_st, dta$when.considered.group.C)
+
+```
+
+time dependent instead of KM is better here. 
+
+### 3 years event free survival
+
+```{r}
+
+gp_c_efs_3 <- surv(dta, dta$efs_fu, dta$efs_st, dta$when.considered.group.C, 36, "3-years efs")
+
+rmdtbl(gp_c_efs_3)
+
+
+```
+
+
+### 5 years event free survival
+
+```{r}
+
+gp_c_efs_5 <- surv(dta, dta$efs_fu, dta$efs_st, dta$when.considered.group.C, 60, "5-years efs")
+
+rmdtbl(gp_c_efs_5)
+
+
+```
+
+
+### event free survival by HF
+
+only 4 patients have HF
+
+
+
+# Cumulative incidence of relapse 
+
+very few events (5 events). This will render results unreliable. 
+
+
+
+# Univariate and multivariate cox regression 
+
+
+### Univariate and multivariate cox regression based on OS 
+
+```{r}
+
+data$Stage_mod <- data$Stage
+
+data$Stage_mod[data$Stage_mod == "Stage I/II"] <- NA
+
+data$Stage_mod <- fct_drop(data$Stage_mod)
+
+
+data$primary_site <- data$X1ry.site
+
+data$primary_site[data$primary_site == "other"] <- NA
+
+data$primary_site <- fct_drop(data$primary_site)
+
+
+
+data$group_mod <- data$group
+
+data$group_mod[data$group_mod == "A"] <- NA
+
+data$group_mod <- fct_drop(data$group_mod)
+
+
+data$Response_cvp <- data$ResponsepostCVP
+
+data$Response_cvp[!data$Response_cvp %in% c("IR", "NR")] <- NA
+
+data$Response_cvp <- fct_drop(data$Response_cvp)
+
+
+data$up_resection_ex_A <- data$upfrontresection
+
+data$up_resection_ex_A[data$group == "A"] <- NA
+
+explanatory = c("age_gp", "Gender", "Stage_mod", "bone_marrow", "CNS", "group_mod", "primary_site",  "up.front.IO", "Diag_time_2_weeks", "Diag_time_4_weeks", "tlc_gp", "hgb_gp", "plt_gp", "uric", "ldh_gp",  "tumor.lysis.syndrome", "up_resection_ex_A", "Response_cvp",  "tm_cvp_cop", "avg_between_cycles",  "treatmentrelatedsepticshock", "treatmentrelatedCVSaccident", "treatmentrelatedheartfailure", "when.considered.group.C", "treatmentrelatedsepticshock"
+)
+
+explanatory_multi = c("Stage_mod", "CNS", "bone_marrow", "group_mod", "uric", "ldh_gp", "tm_cvp_cop", "treatmentrelatedsepticshock")
+
+dependent = "Surv(os_fu, os_st)"
+
+# 
+# data <- data %>%
+#   mutate(
+#         rec_gndr = ff_label(rec_gndr, "Recipient gender"),
+#         age_cat = ff_label(age_cat, "Age"),
+#         chemo_number = ff_label(chemo_number, "Number of chemotherapy"),
+#         gndr_match = ff_label(gndr_match, "Gender match"),
+#         dg_risk = ff_label(dg_risk, "Risk based on diagnosis"),
+#         CO.morbidities.before.BMT = ff_label(CO.morbidities.before.BMT, "Co-morbidities before BMT"),
+#         prod_type_ = ff_label(prod_type_, "Product type"),
+#         CO.morbidities.1st.100.days.After.BMT = ff_label(CO.morbidities.1st.100.days.After.BMT, "Co-morbidities 100 days after BMT"),
+#         vascular = ff_label(vascular, "Vascular compications"),
+#         X.VOD. = ff_label(X.VOD., "VOD"),
+#         capillary.leak.during.the.first.30.days.. = ff_label(capillary.leak.during.the.first.30.days.., "Capillary leak"),
+#         eng_syn = ff_label(eng_syn, "Engraftment syndrome"),
+#         CMV.viraemia = ff_label(CMV.viraemia, "CMV viraemia"),
+#         Organ.toxicity = ff_label(Organ.toxicity, "Organ toxicity"),
+#         GVHD = ff_label(GVHD, "GVHD"),
+#         GVHD..type = ff_label(GVHD..type, "GVHD type"),
+#         Recipient.s.Diagnosis = ff_label(Recipient.s.Diagnosis, "Recipient diagnosis"),
+#         prophylaxisi = ff_label(prophylaxisi, "Prophylaxis") )
+
+ 
+finalfit(data, dependent, explanatory, explanatory_multi, confint_type = "profile") -> t
+
+rownames(t) <- NULL
+
+colnames(t)[1:3] <- c("Risk factor", "Level", "Frequency (percentage) ")
+
+library(flextable)
+rmdtbl(t)
+
+```
+
+CNS positivity for example: p-value is significant. univariate Hazard ratio = 5.68. This means that those with CNS positivity are (5.68-1)*100 = 457% more likely to die, in comparison with those with CNS negative. When adjusting for all other risk factors in multivariate cox regression, p-value is not significant anymore. This means that either effect of CNS positivity on survival was due to affected by other risik factors, or the sample size is too small to detect an effect in multivariate regression. 
+
+
+Since regression coefficients are calculated from events of the covariates, hazard ratio couldn't be calculated for Stage II since it has no events. 
+
+
+### Univariate and multivariate cox regression based on EFS
+
+
+```{r}
+
+dependent = "Surv(efs_fu, efs_st)"
+
+finalfit(data, dependent, explanatory, explanatory_multi) -> t
+
+rownames(t) <- NULL
+colnames(t)[1:3] <- c("Risk factor", "Level", "Frequency (percentage)")
+
+
+rmdtbl(t)
+
+
+```
+
+ 
+
+
+# Concordance analysis of PET/CT with biopsy 
+
+```{r}
+
+gpc <- data %>% 
+  filter(residual == "yes")
+
+comb_pet_biop <- gpc %>% 
+  filter(pet.ct != "NO" & biopsy != "NO")
+
+table(comb_pet_biop$pet.ct, comb_pet_biop$biopsy)
+
+```
+
+only 6 patients are available for the analysis ..  This number is not sufficient. 
+
+
+### Correlation of PET/CT negativity and positivity with survival analysis.
+
+very few patients
+
+### Correlation of biopsy negativity and positivity with survival analysis.
+
+very few patients
+
